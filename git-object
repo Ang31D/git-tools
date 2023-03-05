@@ -1,0 +1,110 @@
+#!/usr/bin/env python3
+
+import argparse
+from git_helper import *
+
+def validate_input(object_input):
+	if object_input is None:
+		print("fatal: missing git-object ref")
+		return
+
+	if is_sha1_hash(object_input):
+		if get_git_dir() is None:
+			print("fatal: not a git repository (or any of the parent directories): .git")
+			return
+		object_path = get_git_object_path_by_sha1(object_input)
+		if object_path is None:
+			print("error: invalid git-object - %s" % object_input)
+			return False
+	elif not file_is_git_object(object_input):
+		print("error: invalid git-object path - %s" % object_input)
+		return False
+	return True
+
+def git_pretty_print(git_object):
+	object_type = git_object["type"]
+	if object_type == "tree":
+		for item in git_object["items"]:
+			print(item)
+	elif object_type == "blob":
+		print(git_object["content"])
+	elif object_type == "commit":
+		print(git_object["content"])
+	else:
+		print(git_object["raw"])
+
+def main(args):
+	object_input = args.input
+
+	if args.get_object_from_head:
+		object_input = get_ref_from_head()
+
+	if not validate_input(object_input):
+		return
+
+	if is_sha1_hash(object_input):
+		object_input = get_git_object_path_by_sha1(object_input)
+
+	object_input = resolve_path(object_input)
+	
+	object_dir = get_git_objects_dir(object_input)
+	if object_dir is None:
+		print("fatal: failed to finds git objects dir - %s" % object_input)
+		return
+
+	git_object = extract_git_object_info(object_input)
+	if git_object is None:
+		print("fatal: failed to read git object - %s" % object_input)
+		return
+
+	if args.verbose_mode:
+		if not args.get_object_from_head:
+			print("* SHA1 %s" % git_object["sha1"])
+
+	if args.type_output:
+		print(git_object["type"])
+		return
+	if args.size_output:
+		print(git_object["size"])
+		return
+	if args.raw_output:
+		print(git_object["raw"])
+		return
+
+	if not args.pretty_print:
+		if args.get_object_from_head:
+			print(git_object["sha1"])
+			if args.verbose_mode:
+				print("branch %s" % get_head_branch())
+		else:
+			print("%s %s" % (git_object["type"], git_object["size"]))
+		return
+
+	git_object = extract_git_object(object_input)
+	if git_object is None:
+		print("fatal: failed to read git object - %s" % object_input)
+		return
+
+	if args.pretty_print:
+		if args.verbose_mode:
+			if args.get_object_from_head:
+				print("* HEAD %s" % git_object["sha1"])
+			print("* %s object, size: %s" % (git_object["type"], git_object["size"]))
+		git_pretty_print(git_object)
+
+if __name__ == "__main__":
+	parser = argparse.ArgumentParser(formatter_class=argparse.RawTextHelpFormatter, description="Git Helper Tool - File-Object Info")
+	parser.add_argument("input",
+                       metavar="type|object",
+                       nargs="?",
+                       help="object sha1 or path")
+	parser.add_argument("-p", dest='pretty_print', action="store_true", help="pretty-print <object> content")
+	parser.add_argument("-t", dest='type_output', action="store_true", help="show object type (one of 'blob', 'tree', 'commit', 'tag', ...)")
+	parser.add_argument("-s", dest='size_output', action="store_true", help="show object size")
+	parser.add_argument("-r", dest='raw_output', action="store_true", help="Output raw content")
+	parser.add_argument("-v", dest='verbose_mode', action="store_true", help="Verbose mode")
+	parser.add_argument("--head", dest='get_object_from_head', action="store_true", help="get object from head")
+
+
+	args = parser.parse_args()
+	main(args)
